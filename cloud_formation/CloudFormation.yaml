@@ -1,0 +1,94 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Spam Eamil Detection Cloud Formation Template
+Parameters:
+  EndpointName:
+    Type: String
+    Description: Name of the prediction endpoint (E1)
+Resources:
+  SESReceiptRuleSet:
+    Type: 'AWS::SES::ReceiptRuleSet'
+      Properties:
+        RuleSetName: receipt-rule-set-cf
+  SESReceiptRule:
+    Type: 'AWS::SES::ReceiptRule'
+      Properties:
+        RuleSetName: !Ref SESReceiptRuleSet
+        Rule:
+          Name: receipt-rule-cf
+          Enabled: true
+          ScanEnabled: false
+          TlsPolicy: Optional
+          Actions:
+            - S3Action:
+                BucketName: !Ref EmailBucket
+  EmailBucket:
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: ccbd-hw3-email-bucket-cf
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: 's3:ObjectCreated:Put'
+            Function: !GetAtt LambdaFunction.Arn
+  BucketPolicy:
+    Type: 'AWS::S3::BucketPolicy'
+    Properties:
+        Bucket: !Ref EmailBucket
+        PolicyDocument:
+          Version: 2012-10-17
+          Statement:
+            - Action:
+                - 's3:PutObject'
+              Effect: Allow
+              Resource: !Join
+                - ''
+                - - 'arn:aws:s3:::'
+                  - !Ref EmailBucket
+                  - /*
+              Principal: '*'
+  LambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: ccbd-hw3-lambda-code-bucket
+        S3Key: lambda_cf.zip
+      Description: Lambda function (LF1)
+      MemorySize: 512
+      Environment:
+        Variables:
+          ENDPOINT_NAME: !Ref EndpointName
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt LambdaIAMRoles.Arn
+      Timeout: 100
+      Runtime: python3.9
+      FunctionName: detect-spam-emails-cf
+      Layers:
+        - arn:aws:lambda:us-east-1:770693421928:layer:Klayers-p39-numpy:2
+  LambdaIAMRoles:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: detect-spam-emails-cf-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonSESFullAccess
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+  LambdaS3Permission:
+    Type: 'AWS::Lambda::Permission'
+      Properties:
+        FunctionName: !GetAtt LambdaFunction.Arn
+        Action: lambda:InvokeFunction
+        Principal: s3.amazonaws.com
+        SourceAccount: !Ref 'AWS::AccountId'
+        SourceArn: !GetAtt EmailBucket.Arn
+

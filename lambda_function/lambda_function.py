@@ -1,4 +1,5 @@
 import json
+import os
 import urllib.parse
 import boto3
 import logging
@@ -59,11 +60,9 @@ def send_email(sender, recipient, receive_date, subject, body, classification, c
     # Display an error if something goes wrong.
     except ClientError as e:
         print(e.response['Error']['Message'])
-        return False
     else:
         print("Email sent! Message ID:"),
         print(response['MessageId'])
-        return True
 
 
 def lambda_handler(event, context):
@@ -99,12 +98,16 @@ def lambda_handler(event, context):
     one_hot_test_messages = one_hot_encode(test_messages, vocabulary_length)
     encoded_test_messages = vectorize_sequences(one_hot_test_messages, vocabulary_length)
 
+    # get the env variable for prediction endpoint
+    ENDPOINT_NAME = os.environ['ENDPOINT_NAME']
+    print("ENDPOINT_NAME: ", ENDPOINT_NAME)
+
     sagemaker = boto3.client('sagemaker-runtime')
-    endpoint_name = "sms-spam-classifier-mxnet-2022-04-13-03-12-34-935"
+
     content_type = "application/json"  # The MIME type of the input data in the request body.
     payload = json.dumps(encoded_test_messages.tolist())  # Payload for inference.
 
-    response = sagemaker.invoke_endpoint(EndpointName=endpoint_name, ContentType=content_type, Body=payload)
+    response = sagemaker.invoke_endpoint(EndpointName=ENDPOINT_NAME, ContentType=content_type, Body=payload)
     result = json.loads(response['Body'].read())
     print("SageMaker Prediction: ", result)
 
@@ -119,15 +122,9 @@ def lambda_handler(event, context):
         confidence_score = round(((1 - predicted_probability) * 100), 5)
 
     # reply to the sender of the email with a message
-    sent_status = send_email(sender, recipient, receive_date, subject,
-                             body, classification, confidence_score)
-    if not sent_status:
-        return {
-            'statusCode': 200,
-            'body': 'Error in sending email.'
-        }
+    send_email(sender, recipient, receive_date, subject, body, classification, confidence_score)
 
     return {
         'statusCode': 200,
-        'body': 'Finished LF1.'
+        'body': json.dumps('Finished LF1.')
     }
