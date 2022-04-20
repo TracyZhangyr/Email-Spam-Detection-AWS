@@ -53,7 +53,7 @@ Resources:
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceAccount: !Ref 'AWS::AccountId'
-      # SourceArn: !GetAtt EmailBucket.Arn
+      SourceArn: "arn:aws:s3:::ccbd-hw3-email-bucket-cf"
   EmailBucket:
     Type: 'AWS::S3::Bucket'
     Properties:
