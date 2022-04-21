@@ -9,7 +9,7 @@ Resources:
     Type: 'AWS::SES::ReceiptRuleSet'
     Properties:
       RuleSetName: receipt-rule-set-cf
-  LambdaIAMRoles:
+  DetectLambdaIAMRoles:
     Type: 'AWS::IAM::Role'
     Properties:
       RoleName: detect-spam-emails-cf-role
@@ -28,28 +28,28 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
         - arn:aws:iam::aws:policy/AmazonSESFullAccess
         - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
-  LambdaFunction:
+  DetectLambdaFunction:
     Type: 'AWS::Lambda::Function'
     Properties:
       Code:
         S3Bucket: ccbd-hw3-lambda-code-bucket
-        S3Key: lambda_cf.zip
-      Description: Lambda function (LF1)
+        S3Key: detect_spam_emails_cf.zip
+      Description: Detect spam emails
       MemorySize: 512
       Environment:
         Variables:
           ENDPOINT_NAME: !Ref EndpointName
       Handler: lambda_function.lambda_handler
-      Role: !GetAtt LambdaIAMRoles.Arn
+      Role: !GetAtt DetectLambdaIAMRoles.Arn
       Timeout: 100
       Runtime: python3.9
       FunctionName: detect-spam-emails-cf
       Layers:
         - arn:aws:lambda:us-east-1:770693421928:layer:Klayers-p39-numpy:2
-  LambdaS3Permission:
+  DetectLambdaS3Permission:
     Type: 'AWS::Lambda::Permission'
     Properties:
-      FunctionName: !GetAtt LambdaFunction.Arn
+      FunctionName: !GetAtt DetectLambdaFunction.Arn
       Action: lambda:InvokeFunction
       Principal: s3.amazonaws.com
       SourceAccount: !Ref 'AWS::AccountId'
@@ -61,7 +61,7 @@ Resources:
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: 's3:ObjectCreated:Put'
-            Function: !GetAtt LambdaFunction.Arn
+            Function: !GetAtt DetectLambdaFunction.Arn
   BucketPolicy:
     Type: 'AWS::S3::BucketPolicy'
     Properties:
@@ -90,4 +90,58 @@ Resources:
         Actions:
           - S3Action:
               BucketName: !Ref EmailBucket
+  RetrainLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        S3Bucket: ccbd-hw3-lambda-code-bucket
+        S3Key: retrain_spam_classifier_cf.zip
+      Description: Retrain spam classifier
+      MemorySize: 128
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt RetrainLambdaIAMRoles.Arn
+      Timeout: 100
+      Runtime: python3.9
+      FunctionName: retrain-spam-classifier-cf
+  RetrainLambdaIAMRoles:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: retrain-spam-classifier-cf-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+  ScheduledRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Name: retrain-spam-detect-cf
+      Description: "ScheduledRule"
+      ScheduleExpression: "rate(24 hours)"
+      State: "ENABLED"
+      Targets:
+        - Arn:
+            Fn::GetAtt:
+              - "RetrainLambdaFunction"
+              - "Arn"
+          Id: "TargetFunctionV1"
+  PermissionForEventsToInvokeLambda:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !Ref "RetrainLambdaFunction"
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn:
+        Fn::GetAtt:
+          - "ScheduledRule"
+          - "Arn"
+
 
